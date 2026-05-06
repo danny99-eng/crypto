@@ -10,8 +10,11 @@ build/
 .venv
 env/
 venv/
-models/
+
+# Trained model weights saved by scripts/train.py — NOT source code
+/models/
 *.pkl
 *.npz
+
 *.log
 .DS_Store
