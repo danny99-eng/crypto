@@ -2,6 +2,7 @@
 REST API — Flask server exposing predictions, backtests, and model metrics.
 """
 from __future__ import annotations
+import sys
 import json
 import os
 import time
@@ -9,6 +10,11 @@ import threading
 from functools import wraps
 from collections import defaultdict
 from typing import Dict, Optional
+
+# Ensure project root is on path regardless of working directory
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS

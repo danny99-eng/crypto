@@ -2,15 +2,17 @@
 """
 CLI backtest script.
 Usage:
-    python scripts/backtest.py
-    python scripts/backtest.py --symbol ETHUSDT --days 180 --synthetic
+    python scripts/backtest.py --synthetic
+    python scripts/backtest.py --symbol ETHUSDT --days 180
 """
 import sys
 import os
 import argparse
 import json
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from utils import config
 from utils.logger import get_logger
@@ -28,20 +30,21 @@ def main():
     p.add_argument("--interval",  default=config.DEFAULT_TF)
     p.add_argument("--days",      type=int, default=90)
     p.add_argument("--synthetic", action="store_true")
-    p.add_argument("--output",    default=None, help="JSON output file")
+    p.add_argument("--output",    default=None, help="Optional JSON output file")
     args = p.parse_args()
 
-    log.info("Loading models from %s …", config.MODEL_DIR)
+    log.info("Loading models from %s ...", config.MODEL_DIR)
     try:
         engine = PredictionEngine.from_saved(config.MODEL_DIR)
     except Exception as e:
-        log.error("Could not load models: %s — run train.py first", e)
+        log.error("Could not load models: %s", e)
+        log.error("Run train.py first: python scripts/train.py --synthetic")
         sys.exit(1)
 
-    log.info("Fetching %d days of %s %s …", args.days, args.symbol, args.interval)
+    log.info("Fetching %d days of %s %s ...", args.days, args.symbol, args.interval)
     candles = get_candles(args.symbol, args.interval, days=args.days, use_synthetic=args.synthetic)
     rows    = build_features(candles)
-    log.info("Running backtest on %d feature rows …", len(rows))
+    log.info("Running backtest on %d feature rows ...", len(rows))
 
     result = run_backtest(rows, engine)
     s = result["summary"]
@@ -55,7 +58,7 @@ def main():
     print(f"  Initial     : ${s['initial_capital']:,.2f}")
     print(f"  Final       : ${s['final_equity']:,.2f}")
     print(f"  Return      : {s['total_return_pct']:+.2f}%")
-    print(f"  Ann. Return : {s.get('annual_return_pct',0):+.2f}%")
+    print(f"  Ann. Return : {s.get('annual_return_pct', 0):+.2f}%")
     print(f"  Max DD      : -{s['max_drawdown_pct']:.2f}%")
     print(f"  Sharpe      : {s['sharpe_ratio']:.3f}")
     print(f"  Sortino     : {s['sortino_ratio']:.3f}")
@@ -69,7 +72,7 @@ def main():
     if args.output:
         with open(args.output, "w") as f:
             json.dump(result, f, indent=2)
-        log.info("Full results saved → %s", args.output)
+        log.info("Full results saved -> %s", args.output)
 
 
 if __name__ == "__main__":
