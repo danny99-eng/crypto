@@ -240,12 +240,27 @@ def retrain():
     return jsonify({"status": "queued", "symbol": symbol, "interval": interval, "days": days}), 202
 
 
-# ── Entry point ───────────────────────────────────────────────────────────
+# ── Entry point ───────────────────────────────────────────────────────────────────────────
 
 def create_app() -> Flask:
     return app
 
 
+def _serve():
+    """Start production WSGI server (Waitress). Falls back to Flask dev server if not installed."""
+    try:
+        from waitress import serve
+        log.info("=================================================")
+        log.info("  CryptoOracle API  —  Production server (Waitress)")
+        log.info("  http://localhost:%d", config.API_PORT)
+        log.info("  Open webapp/index.html and connect to the URL above")
+        log.info("=================================================")
+        serve(app, host=config.API_HOST, port=config.API_PORT, threads=8)
+    except ImportError:
+        log.warning("waitress not found — install it: pip install waitress")
+        log.warning("Falling back to Flask development server")
+        app.run(host=config.API_HOST, port=config.API_PORT, debug=False)
+
+
 if __name__ == "__main__":
-    log.info("Starting CryptoOracle API on %s:%d", config.API_HOST, config.API_PORT)
-    app.run(host=config.API_HOST, port=config.API_PORT, debug=False)
+    _serve()

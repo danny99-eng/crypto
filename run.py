@@ -39,11 +39,8 @@ def main():
         _main()
 
     elif command == "api":
-        from api.server import app
-        from utils import config
-        print(f"\n  CryptoOracle API starting on http://localhost:{config.API_PORT}")
-        print(f"  Open webapp/index.html and connect to http://localhost:{config.API_PORT}\n")
-        app.run(host=config.API_HOST, port=config.API_PORT, debug=False)
+        from api.server import _serve
+        _serve()
 
     elif command == "test":
         import subprocess
