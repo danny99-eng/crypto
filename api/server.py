@@ -41,13 +41,41 @@ _retrain_lock = threading.Lock()
 
 
 def get_engine() -> Optional[PredictionEngine]:
+    """Load models — auto-trains with synthetic data if models folder missing."""
     global _engine
     if _engine is None:
         try:
             _engine = PredictionEngine.from_saved(config.MODEL_DIR)
+            log.info("Models loaded successfully from %s", config.MODEL_DIR)
+        except FileNotFoundError:
+            log.warning("No trained models found at %s", config.MODEL_DIR)
+            log.warning("Auto-training with synthetic data — this takes ~2 minutes...")
+            _auto_train()
         except Exception as exc:
-            log.warning("Could not load models (%s) — train first via /api/retrain", exc)
+            log.warning("Could not load models: %s", exc)
     return _engine
+
+
+def _auto_train():
+    """Train models automatically with synthetic data on first run."""
+    global _engine
+    if _retrain_lock.acquire(blocking=False):
+        try:
+            from core.ingestion.fetcher import get_candles
+            from core.pipeline.preprocessor import run as preprocess
+            from core.models.trainer import train_all
+            log.info("=== Auto-training started (synthetic data) ===")
+            candles = get_candles(config.DEFAULT_ASSET, config.DEFAULT_TF,
+                                  days=365, use_synthetic=True)
+            split   = preprocess(candles, config.DEFAULT_TF)
+            train_all(split, save_dir=config.MODEL_DIR)
+            _engine = PredictionEngine.from_saved(config.MODEL_DIR)
+            log.info("=== Auto-training complete — models ready ===")
+        except Exception as exc:
+            log.error("Auto-training failed: %s", exc)
+            log.error("Run manually: python run.py train --synthetic")
+        finally:
+            _retrain_lock.release()
 
 
 # ── Middleware ────────────────────────────────────────────────────────────
@@ -71,10 +99,17 @@ def rate_limit(f):
 @app.route("/api/health")
 def health():
     engine = get_engine()
+    model_dir = config.MODEL_DIR
+    baseline_exists = os.path.exists(os.path.join(model_dir, "baseline.pkl"))
+    lstm_exists     = os.path.exists(os.path.join(model_dir, "lstm.npz"))
     return jsonify({
-        "status": "ok",
-        "model_loaded": engine is not None,
-        "timestamp": int(time.time() * 1000),
+        "status":           "ok" if engine is not None else "no_models",
+        "model_loaded":     engine is not None,
+        "baseline_trained": baseline_exists,
+        "lstm_trained":     lstm_exists,
+        "model_dir":        model_dir,
+        "message":          "Ready" if engine else "Models not trained yet. Auto-training in background or run: python run.py train --synthetic",
+        "timestamp":        int(time.time() * 1000),
     })
 
 

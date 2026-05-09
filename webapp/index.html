@@ -572,15 +572,30 @@ function buildReasons(sig) {
 // ═══════════════════════════════════════════════════════════════════════════
 // LIVE API FETCHER
 // ═══════════════════════════════════════════════════════════════════════════
+async function checkAPIHealth() {
+  if (!state.apiUrl) return { ok: false };
+  try {
+    const res = await fetch(`${state.apiUrl}/api/health`, { signal: AbortSignal.timeout(5000) });
+    const data = await res.json();
+    return data;
+  } catch { return { ok: false }; }
+}
+
 async function fetchLiveSignal(market) {
   if (!state.apiUrl) return generateSignal(market);
   try {
     const headers = { 'Content-Type': 'application/json' };
     if (state.apiKey) headers['Authorization'] = 'Bearer ' + state.apiKey;
-    const url = `${state.apiUrl}/api/predict?symbol=${market.s}&interval=1h&synthetic=false`;
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+    const url = `${state.apiUrl}/api/predict?symbol=${market.s}&interval=1h&synthetic=true`;
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(12000) });
+    if (res.status === 503) {
+      // Models not ready — fall back to demo data but flag it
+      state.apiModelsReady = false;
+      return generateSignal(market);
+    }
     if (!res.ok) throw new Error(res.status);
     const data = await res.json();
+    state.apiModelsReady = true;
     return {
       ...market,
       price:   data.price,
@@ -589,16 +604,17 @@ async function fetchLiveSignal(market) {
       pLSTM:   data.model_outputs?.lstm     ?? data.probability,
       conf:    data.confidence,
       action:  data.action,
-      rsi:     data.indicators?.rsi     ?? 50,
-      macdH:   data.indicators?.macd_hist ?? 0,
-      atr:     data.indicators?.atr     ?? 0,
-      bbPct:   data.indicators?.bb_pct  ?? 0.5,
-      volD:    data.indicators?.vol_delta ?? 1.0,
-      roc:     data.indicators?.roc     ?? 0,
-      ema50:   data.indicators?.ema_50  ?? data.price,
+      rsi:     data.indicators?.rsi        ?? 50,
+      macdH:   data.indicators?.macd_hist  ?? 0,
+      atr:     data.indicators?.atr        ?? 0,
+      bbPct:   data.indicators?.bb_pct     ?? 0.5,
+      volD:    data.indicators?.vol_delta  ?? 1.0,
+      roc:     data.indicators?.roc        ?? 0,
+      ema50:   data.indicators?.ema_50     ?? data.price,
       change24: rng(-15, 20),
       vol24h:   rng(1_000_000, 50_000_000),
       timestamp: Date.now(),
+      fromApi: true,
     };
   } catch {
     return generateSignal(market);
@@ -946,14 +962,39 @@ function filterCat(cat, el) {
   if (state.results.length > 0) renderList();
 }
 
-function connectAPI() {
+async function connectAPI() {
   const url = document.getElementById('api-url').value.trim();
   if (!url) { alert('Enter your API URL first'); return; }
   state.apiUrl = url.replace(/\/$/, '');
   state.apiKey = document.getElementById('api-key').value.trim() || null;
   state.mode   = 'live';
   document.getElementById('mode-tag').textContent = 'LIVE';
-  setStatus('live', 'Connected — ' + state.apiUrl.replace(/https?:\/\//, ''));
+  setStatus('live', 'Connecting...');
+
+  // Check health
+  const health = await checkAPIHealth();
+  if (!health || health.status === undefined) {
+    setStatus('err', 'Cannot reach API at ' + state.apiUrl + ' — is it running?');
+    document.getElementById('mode-tag').textContent = 'DEMO';
+    state.apiUrl = null; state.mode = 'demo';
+    return;
+  }
+  if (!health.model_loaded) {
+    setStatus('live', '⚡ API connected — training models now (~2 min), using demo data meanwhile...');
+    document.getElementById('mode-tag').textContent = 'TRAINING';
+    // Poll until models ready
+    const poll = setInterval(async () => {
+      const h2 = await checkAPIHealth();
+      if (h2 && h2.model_loaded) {
+        clearInterval(poll);
+        document.getElementById('mode-tag').textContent = 'LIVE';
+        setStatus('live', 'Models ready — live predictions active');
+        runScan();
+      }
+    }, 8000);
+  } else {
+    setStatus('live', 'Live API connected — ' + state.apiUrl.replace(/https?:\/\//, ''));
+  }
 }
 
 function useDemoMode() {

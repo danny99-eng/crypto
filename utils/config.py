@@ -15,7 +15,9 @@ DEFAULT_ASSET = "BTCUSDT"
 DEFAULT_TF    = "1h"
 
 # ── Model ─────────────────────────────────────────────────────────────────
-MODEL_DIR     = os.getenv("MODEL_DIR", "./models")
+# Resolve model dir relative to this file so it works on Windows + any cwd
+_HERE         = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_DIR     = os.getenv("MODEL_DIR", os.path.join(_HERE, "models"))
 BASELINE_PATH = os.path.join(MODEL_DIR, "baseline.pkl")
 LSTM_PATH     = os.path.join(MODEL_DIR, "lstm.npz")
 
